@@ -4,24 +4,62 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 )
 
 func main() {
-	if len(os.Args) != 3 {
-		fmt.Println("Usage: ccwc -[c|l|w|m] filename")
+	var command, filename string
+	var content []byte
+	var isValid bool
+
+	contentFromCommand := readFromStdin()
+
+	// If there are 3 arguments, we assume command + filename
+	if len(os.Args) == 3 {
+		command = os.Args[1]
+		filename = os.Args[2]
+		content, isValid = checkIfFileExists(filename)
+		if !isValid {
+			return
+		}
+	} else if len(os.Args) == 2 && len(contentFromCommand) > 0 {
+		// If there are 2 arguments and input from stdin is non-empty
+		command = os.Args[1]
+		content = contentFromCommand
+	} else if len(os.Args) == 2 && len(contentFromCommand) == 0 {
+		// Only filename provided, no piped input
+		filename = os.Args[1]
+		content, isValid = checkIfFileExists(filename)
+		if !isValid {
+			return
+		}
+		command = ""
+	} else {
+		// Neither a command nor valid input provided
+		fmt.Println("Usage: ccwc [-c|-l|-w|-m] [filename] or piping input")
 		return
 	}
 
-	command := os.Args[1]
-	filename := os.Args[2]
+	// Process the command
+	commandOutput(command, content, filename)
+}
 
-	file, isValid := checkIfFileExists(filename)
-	if !isValid {
-		return
+func readFromStdin() []byte {
+	// Reading from stdin (for piped input like `cat file.txt | ccwc -l`)
+	stat, _ := os.Stdin.Stat()
+
+	// Only read from stdin if input is piped (not interactive)
+	if (stat.Mode() & os.ModeCharDevice) == 0 {
+		stdinBytes, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Println("Error reading from stdin:", err)
+			return nil
+		}
+		return stdinBytes
 	}
-	commandOutput(command, file, filename)
+	return nil
 }
 
 func commandOutput(command string, file []byte, filename string) {
@@ -34,6 +72,11 @@ func commandOutput(command string, file []byte, filename string) {
 		fmt.Printf("%8d %s\n", numberOfWordsInAFile(file), filename)
 	case "-m":
 		fmt.Printf("%8d %s\n", numberOfCharactersInAFile(file), filename)
+	case "": // Default: show lines, words, and bytes
+		lines := numberOfLinesInAFile(file)
+		words := numberOfWordsInAFile(file)
+		bytesInAFile := numberOfBytesInAFile(file)
+		fmt.Printf("%8d %8d %8d %s\n", lines, words, bytesInAFile, filename)
 	default:
 		fmt.Println("Invalid command. Use -c, -l, -w, or -m.")
 	}
@@ -82,5 +125,5 @@ func numberOfWordsInAFile(content []byte) int {
 // Command -m: Number of characters
 func numberOfCharactersInAFile(content []byte) int {
 	text := string(content)
-	return len([]rune(text)) // Handling multibyte characters
+	return len([]rune(text)) // Multibyte character handling
 }
